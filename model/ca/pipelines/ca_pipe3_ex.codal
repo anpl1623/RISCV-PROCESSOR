@@ -1,0 +1,378 @@
+/**
+ * Codasip s.r.o.
+ *
+ * CONFIDENTIAL
+ *
+ * Copyright 2022 Codasip s.r.o.
+ *
+ * All Rights Reserved.
+ *
+ * NOTICE: All information contained in this file, is and shall remain the property of
+ * Codasip s.r.o. and its suppliers, if any.
+ *
+ * The intellectual and technical concepts contained herein are confidential and proprietary to
+ * Codasip s.r.o. and are protected by trade secret and copyright law.  In addition, elements of the
+ * technical concepts may be patent pending.
+ *
+ * This file is part of the Codasip Studio product. No part of the Studio product, including this
+ * file, may be use, copied, modified, or distributed except in accordance with the terms contained
+ * in Codasip license agreement under which you obtained this file.
+ *
+ *  \file   ca_pipe3_ex.codal
+ *  \author Codasip
+ *  \date   09.02.2022
+ *  \brief  Execute stage - cycle accurate model
+ */
+
+#include "ca_defines.hcodal"
+#include "debug.hcodal"
+
+// -------------------------------------------------------------------------------------------------
+// Execute Stage
+// -------------------------------------------------------------------------------------------------
+event ex : pipeline(pipe.EX)
+{
+    use ex_memory;
+    use ex_output;
+    semantics
+    {
+        // HALT instruction detection
+        if (r_ex_halt == HALT_HALT)
+        {
+            codasip_break();
+            codasip_info(INFO_GENERAL, "Halt Instructions Indicated");
+        }
+
+        // Forwarding logic for source 1
+        if ((r_me_rd == r_ex_src1) && (r_me_rd != 0) && (r_me_regwrite == WE_TRUE)) {
+            s_ex_fwdA_sel = FWDA_ME;
+        }
+        else if ((r_wb_rd == r_ex_src1) && (r_wb_rd != 0) && (r_wb_regwrite == WE_TRUE)) {
+            s_ex_fwdA_sel = FWDA_WB;
+        }
+        else {
+            s_ex_fwdA_sel = FWDA_EX;
+        }
+
+        // Forwarding logic for source 2
+        if ((r_me_rd == r_ex_src2) && (r_me_rd != 0) && (r_me_regwrite == WE_TRUE)) {
+            s_ex_fwdB_sel = FWDB_ME;
+        }
+        else if ((r_wb_rd == r_ex_src2) && (r_wb_rd != 0) && (r_wb_regwrite == WE_TRUE)) {
+            s_ex_fwdB_sel = FWDB_WB;
+        }
+        else {
+            s_ex_fwdB_sel = FWDB_EX;
+        }
+
+        // Forwarding mux for source 1
+        switch (s_ex_fwdA_sel) {
+            case FWDA_EX: 
+                s_ex_fwdA_src = r_ex_reg1; 
+                break;
+            case FWDA_ME: 
+                s_ex_fwdA_src = r_me_alu; 
+                break;
+            case FWDA_WB: 
+                // s_ex_fwdA_src = r_wb_alu; 
+                s_ex_fwdA_src = s_wb_result;
+                break;
+            default: 
+                s_ex_fwdA_src = r_ex_reg1; 
+                break;
+        }
+
+        // Forwarding mux for source 2
+        switch (s_ex_fwdB_sel) {
+            case FWDB_EX: 
+                s_ex_fwdB_src = r_ex_reg2; 
+                break;
+            case FWDB_ME: 
+                s_ex_fwdB_src = r_me_alu; 
+                break;
+            case FWDB_WB: 
+                // s_ex_fwdB_src = r_wb_alu; 
+                s_ex_fwdB_src = s_wb_result;
+                break;
+            default: 
+                s_ex_fwdB_src = r_ex_reg2; 
+                break;
+        }
+
+        // ALU source 1 multiplexor
+        switch (r_ex_alusrc1) {
+            case ALU_SRC1_REG:
+                s_ex_src1 = s_ex_fwdA_src;
+                break;
+            case ALU_SRC1_ZERO:
+                s_ex_src1 = 0;
+                break;
+            case ALU_SRC1_PC:
+                s_ex_src1 = r_ex_pc;        // Use PC for AUIPC
+                break;
+            default:
+                s_ex_src1 = 0;
+                codasip_fatal(SRC2_ERROR, "Default case: %d\n", r_ex_alusrc1);
+                break;
+        }
+
+        // Source 2 multiplexor
+        switch (r_ex_alusrc2) {
+            case ALU2_REG:
+                s_ex_src2 = s_ex_fwdB_src;
+                break;
+            case ALU2_IMM:
+                s_ex_src2 = r_ex_immed;
+                break;
+            default:
+                s_ex_src2 = 0;
+                codasip_fatal(SRC2_ERROR, "Default case: %d\n", r_ex_alusrc2);
+                break;
+        }
+
+        // ALU operations
+        switch (r_ex_aluop) {
+            case ALU_NOP:
+                s_ex_alu = 0;
+                break;
+            case ALU_ADD:
+                s_ex_alu = s_ex_src1 + s_ex_src2;
+                break;
+            case ALU_SUB:
+                s_ex_alu = s_ex_src1 - s_ex_src2;
+                break;
+            case ALU_SLL:
+                s_ex_alu = s_ex_src1 << (int5)s_ex_src2;
+                break;
+            case ALU_SLT:
+                s_ex_alu = ((int32)s_ex_src1 < (int32)s_ex_src2) ? 1 : 0;
+                break;
+            case ALU_SLTU:
+                s_ex_alu = (s_ex_src1 < s_ex_src2) ? 1 : 0;
+                break;
+            case ALU_XOR:
+                s_ex_alu = s_ex_src1 ^ s_ex_src2;
+                break;
+            case ALU_SRL:
+                s_ex_alu = s_ex_src1 >> (int5)s_ex_src2;
+                break;
+            case ALU_SRA:
+                s_ex_alu = (int32)s_ex_src1 >> (int5)s_ex_src2;
+                break;
+            case ALU_OR:
+                s_ex_alu = s_ex_src1 | s_ex_src2;
+                break;
+            case ALU_AND:
+                s_ex_alu = s_ex_src1 & s_ex_src2;
+                break;
+            case ALU_ENC:
+                s_ex_p1 = s_ex_src1[0..0] ^ s_ex_src1[1..1] ^ s_ex_src1[3..3] ^ s_ex_src1[4..4] ^ s_ex_src1[6..6] ^ s_ex_src1[8..8] ^ s_ex_src1[10..10] ^ s_ex_src1[11..11] ^ s_ex_src1[13..13] ^ s_ex_src1[15..15];
+                s_ex_p2 = s_ex_src1[0..0] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[12..12] ^ s_ex_src1[13..13];
+                s_ex_p4 = s_ex_src1[1..1] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ s_ex_src1[7..7] ^ s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15];
+                s_ex_p8 = s_ex_src1[4..4] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[7..7] ^ s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10];
+                s_ex_p16 = s_ex_src1[11..11] ^ s_ex_src1[12..12] ^ s_ex_src1[13..13] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15];
+                s_ex_p32 = s_ex_src1[0..0] ^ s_ex_src1[1..1] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ 
+                s_ex_src1[4..4] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[7..7] ^ 
+                s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[11..11] ^ 
+                s_ex_src1[12..12] ^ s_ex_src1[13..13] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15] ^ 
+                s_ex_p1 ^ s_ex_p2 ^ s_ex_p4 ^ s_ex_p8 ^ s_ex_p16;
+                
+                // Construct the final encoded value
+                s_ex_alu = ((uint32)s_ex_p32 << 21) |
+                           ((uint32)s_ex_p16 << 20) |
+                           ((uint32)s_ex_p8 << 19) |
+                           ((uint32)s_ex_p4 << 18) |
+                           ((uint32)s_ex_p2 << 17) |
+                           ((uint32)s_ex_p1 << 16) |
+                           (s_ex_src1 & 0xFFFFu);
+                break;
+            case ALU_DEC:
+                s_ex_p1 = s_ex_src1[0..0] ^ s_ex_src1[1..1] ^ s_ex_src1[3..3] ^ s_ex_src1[4..4] ^  s_ex_src1[6..6] ^ s_ex_src1[8..8] ^ s_ex_src1[10..10] ^ s_ex_src1[11..11] ^ s_ex_src1[13..13] ^ s_ex_src1[15..15] ^ s_ex_src1[16..16];
+                s_ex_p2 = s_ex_src1[0..0] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[12..12] ^ s_ex_src1[13..13] ^ s_ex_src1[17..17];
+                s_ex_p4 = s_ex_src1[1..1] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ s_ex_src1[7..7] ^ s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15] ^ s_ex_src1[18..18];
+                s_ex_p8 = s_ex_src1[4..4] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[7..7] ^ s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[19..19];
+                s_ex_p16 = s_ex_src1[11..11] ^ s_ex_src1[12..12] ^ s_ex_src1[13..13] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15] ^ s_ex_src1[20..20];
+                s_ex_p32 = s_ex_src1[0..0] ^ s_ex_src1[1..1] ^ s_ex_src1[2..2] ^ s_ex_src1[3..3] ^ s_ex_src1[4..4] ^ s_ex_src1[5..5] ^ s_ex_src1[6..6] ^ s_ex_src1[7..7] ^ 
+                s_ex_src1[8..8] ^ s_ex_src1[9..9] ^ s_ex_src1[10..10] ^ s_ex_src1[11..11] ^ s_ex_src1[12..12] ^ s_ex_src1[13..13] ^ s_ex_src1[14..14] ^ s_ex_src1[15..15] ^ 
+                s_ex_src1[16..16] ^ s_ex_src1[17..17] ^ s_ex_src1[18..18] ^ s_ex_src1[19..19] ^ s_ex_src1[20..20] ^ s_ex_src1[21..21];
+                
+                s_ex_ecc = s_ex_p32 :: s_ex_p16 :: s_ex_p8 :: s_ex_p4 :: s_ex_p2 :: s_ex_p1;
+                codasip_info(1, "s_ex_ecc: %d",s_ex_ecc);
+                //DEBUGGER IF STATEMENT FOR ECC
+                if (s_ex_ecc == 0) {
+                    s_ex_alu = s_ex_src1[15..0];
+                }
+                else if (s_ex_ecc == 35) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x1) | 0x40000000;
+                }
+                else if (s_ex_ecc == 37) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x2) | 0x40000000;
+                }
+                else if (s_ex_ecc == 38) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x4) | 0x40000000;
+                }
+                else if (s_ex_ecc == 39) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x8) | 0x40000000;
+                }
+                else if (s_ex_ecc == 41) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x10) | 0x40000000;
+                }
+                else if (s_ex_ecc == 42) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x20) | 0x40000000;
+                }
+                else if (s_ex_ecc == 43) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x40) | 0x40000000;
+                }
+                else if (s_ex_ecc == 44) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x80) | 0x40000000;
+                }
+                else if (s_ex_ecc == 45) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x100) | 0x40000000;
+                }
+                else if (s_ex_ecc == 46) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x200) | 0x40000000;
+                }
+                else if (s_ex_ecc == 47) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x400) | 0x40000000;
+                }
+                else if (s_ex_ecc == 49) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x800) | 0x40000000;
+                }
+                else if (s_ex_ecc == 50) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x1000) | 0x40000000;
+                }
+                else if (s_ex_ecc == 51) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x2000) | 0x40000000;
+                }
+                else if (s_ex_ecc == 52) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x4000) | 0x40000000;
+                }
+                else if (s_ex_ecc == 53) {
+                    s_ex_alu = (s_ex_src1[15..0] ^ 0x8000) | 0x40000000;
+                }
+                else if (s_ex_ecc == 32 || s_ex_ecc == 33 || s_ex_ecc == 34 || s_ex_ecc == 36 || s_ex_ecc == 40 || s_ex_ecc == 48) {
+                    s_ex_alu = s_ex_src1[15..0] | 0x40000000;
+                }
+                else {
+                    s_ex_alu = 0x80000000u;
+                }
+            break;
+            default:
+                s_ex_alu = 0;
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", r_ex_aluop);
+                break;
+        }
+
+        // Branch target address calculation
+        switch (r_ex_branchsel) {
+            case BRADD_ADDR:
+                s_ex_target_address = r_ex_pc + r_ex_immed;
+                break;
+            case BRADD_ALU:
+                s_ex_target_address = s_ex_alu;
+                break;
+            default:
+                s_ex_target_address = 0;
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", r_ex_branchsel);
+                break;
+        }
+
+        // Zero flag generation
+        s_ex_zero = (s_ex_alu == 0);
+        
+        // Memory operation handling
+        ex_memory();
+        
+        // Update pipeline registers
+        ex_output();
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// Execute Memory Event
+// -------------------------------------------------------------------------------------------------
+event ex_memory : pipeline(pipe.EX)
+{
+    semantics
+    {
+        uint1 op_rw;     // read/write control
+        uint2 op_type;   // operation type (nonseq/burst/idle)
+
+        // Set memory operation parameters based on instruction type
+        switch(r_ex_memop) {
+            case MEM_LB:
+            case MEM_LBU:
+                op_rw = CP_AHB_READ;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_8;
+                break;
+
+            case MEM_LH:
+            case MEM_LHU:
+                op_rw = CP_AHB_READ;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_16;
+                break;
+
+            case MEM_LW:
+                op_rw = CP_AHB_READ;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_32;
+                break;
+
+            case MEM_SB:
+                op_rw = CP_AHB_WRITE;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_8;
+                break;
+
+            case MEM_SH:
+                op_rw = CP_AHB_WRITE;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_16;
+                break;
+
+            case MEM_SW:
+                op_rw = CP_AHB_WRITE;
+                op_type = CP_AHB_NONSEQ;
+                s_ex_memsize = CP_AHB_SIZE_32;
+                break;
+
+            default:
+                op_rw = DONT_CARE;
+                op_type = CP_AHB_IDLE;
+                s_ex_memsize = DONT_CARE;
+                break;
+        }
+
+        // Memory interface transport for address phase
+        ldst.transport(CP_PHS_ADDRESS, op_type, op_rw, s_ex_alu, s_ex_memsize);
+
+        // Encode data for store operations
+        s_ex_encoded_data = ldst.encode_data(s_ex_fwdB_src, s_ex_alu, s_ex_memsize);
+
+        // Handle memory stall
+        s_ex_stall = s_me_stall;
+    };
+};
+
+event ex_output : pipeline(pipe.EX)
+{
+    semantics
+    { 
+        r_me_pc = r_ex_pc;
+        r_me_instr = r_ex_instr;
+        r_me_regwrite = r_ex_regwrite;
+        r_me_rd = r_ex_rd;
+        r_me_alu = s_ex_alu;
+        r_me_zero = s_ex_zero;
+        r_me_target_addr = s_ex_target_address;
+        r_me_brnchop = r_ex_brnchop;
+        r_me_rfwt_sel = r_ex_rfwt_sel;
+        
+        // Memory control signals
+        r_me_memop = r_ex_memop;
+        r_me_memsize = s_ex_memsize;
+        r_me_wtdat = s_ex_encoded_data;
+    };
+};

@@ -1,0 +1,146 @@
+/**
+ * Codasip s.r.o.
+ *
+ * CONFIDENTIAL
+ */
+
+#ifndef CA_DEFINES_HCODAL
+#define CA_DEFINES_HCODAL
+
+#include "config.hcodal"
+
+// Signal size definitions
+#define ALUOP_W        bitsizeof(enum aluop)
+#define REGWRITE_W     bitsizeof(enum regwrite)
+#define SRC1_W         bitsizeof(enum src1)
+#define SRC2_W         bitsizeof(enum src2)
+#define HALT_W         bitsizeof(enum halt)
+#define RFWT_W         bitsizeof(enum rfwt)
+#define RFF1_W         bitsizeof(enum rff1_sel)
+#define RFF2_W         bitsizeof(enum rff2_sel)
+#define FWDA_W         bitsizeof(enum fwdA_sel)
+#define FWDB_W         bitsizeof(enum fwdB_sel)
+#define BRANCH_W       bitsizeof(enum branchop)
+#define BRADD_W        bitsizeof(enum branchsel)
+#define IMM_W          bitsizeof(enum immsel)
+#define MEMOP_W        bitsizeof(enum mem_ops)
+
+// Memory Operations Enum
+enum mem_ops { // PHASE 8
+    MEM_NOP = 0,    // No memory operation
+    MEM_LB,         // Load Byte
+    MEM_LBU,        // Load Byte Unsigned
+    MEM_LH,         // Load Halfword
+    MEM_LHU,        // Load Halfword Unsigned
+    MEM_LW,         // Load Word
+    MEM_SB,         // Store Byte
+    MEM_SH,         // Store Halfword
+    MEM_SW          // Store Word
+};
+
+// ALU Operations Enum
+enum aluop {
+    ALU_NOP,
+    ALU_ADD,
+    ALU_SUB,
+    ALU_SLT,
+    ALU_SLTU,
+    ALU_SLL,
+    ALU_XOR,
+    ALU_SRL,
+    ALU_SRA,
+    ALU_OR,
+    ALU_AND,
+    ALU_ENC,    // Added for ENC instruction
+    ALU_DEC     // Added for DEC instruction
+};
+
+// ALU Source 1 Selection
+enum src1 {
+    ALU_SRC1_REG,
+    ALU_SRC1_ZERO,
+    ALU_SRC1_PC
+};
+
+// ALU Source 2 Selection
+enum src2 {
+    ALU2_REG,
+    ALU2_IMM,
+};
+
+// Register Write Control
+enum regwrite {
+    WE_FALSE,
+    WE_TRUE,
+};
+
+// Halt Control
+enum halt {
+    HALT_NOHALT,
+    HALT_HALT,
+};
+
+// Branch Operations
+enum branchop {
+    BRANCH_FALSE,
+    BRANCH_TRUE,
+    BRANCH_COND_FALSE,
+    BRANCH_COND_TRUE
+};
+
+// Immediate Type Selection
+enum immsel {
+    IMM_NONE,
+    IMM_ITYPE,
+    IMM_STYPE,
+    IMM_BTYPE,
+    IMM_UTYPE,
+    IMM_JTYPE
+};
+
+// Register File Write Source Selection
+enum rfwt {
+    RFWT_ALU,
+    RFWT_PC,
+    RFWT_MEM
+};
+
+// Branch Target Address Selection
+enum branchsel {
+    BRADD_ADDR,    // PC + imm for branches and JAL
+    BRADD_ALU      // ALU result for JALR
+};
+
+// Forwarding Unit Control for RF Read Port 1
+enum rff1_sel {
+    RFF1_RF,
+    RFF1_ME,
+    RFF1_WB
+};
+
+// Forwarding Unit Control for RF Read Port 2
+enum rff2_sel {
+    RFF2_RF,
+    RFF2_ME,
+    RFF2_WB
+};
+
+// Execute Stage Forwarding for Source 1
+enum fwdA_sel {
+    FWDA_EX,
+    FWDA_ME,
+    FWDA_WB
+};
+
+// Execute Stage Forwarding for Source 2
+enum fwdB_sel {
+    FWDB_EX,
+    FWDB_ME,
+    FWDB_WB
+};
+
+// Auxiliary definitions
+#define DONT_CARE           0
+#define NOP_INSTRUCTION     ITYPE_ADDI
+
+#endif // CA_DEFINES_HCODAL

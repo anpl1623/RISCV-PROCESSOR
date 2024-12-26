@@ -1,0 +1,227 @@
+/**
+ * Codasip s.r.o.
+ *
+ * CONFIDENTIAL
+ *
+ * Copyright 2022 Codasip s.r.o.
+ *
+ * All Rights Reserved.
+ *
+ * NOTICE: All information contained in this file, is and shall remain the property of
+ * Codasip s.r.o. and its suppliers, if any.
+ *
+ * The intellectual and technical concepts contained herein are confidential and proprietary to
+ * Codasip s.r.o. and are protected by trade secret and copyright law.  In addition, elements of the
+ * technical concepts may be patent pending.
+ *
+ * This file is part of the Codasip Studio product. No part of the Studio product, including this
+ * file, may be use, copied, modified, or distributed except in accordance with the terms contained
+ * in Codasip license agreement under which you obtained this file.
+ *
+ *  \file   ca_pipe2_id.codal
+ *  \author Codasip
+ *  \date   09.02.2022
+ *  \brief  cycle accurate model
+ */
+
+/**
+ * CONFIDENTIAL AND PROPRIETARY INFORMATION
+ */
+
+#include "config.hcodal"
+#include "ca_defines.hcodal"
+
+// -------------------------------------------------------------------------------------------------
+// Decode stage
+// -------------------------------------------------------------------------------------------------
+
+event id : pipeline(pipe.ID)
+{
+    use dec;
+    use id_output;
+    
+    semantics
+    {
+        uint32 id_instr_temp;
+        bool cache_ready, cache_response;
+        uint2 instr_control;
+        
+        // -----------------------------------------------------------------------------------------
+        // Instruction fetch finish
+        // -----------------------------------------------------------------------------------------
+        if_code.transport(CP_PHS_DATA, cache_ready, cache_response, id_instr_temp);
+
+        // Handle instruction selection based on pipeline state
+        if(r_id_clear) {
+            s_id_instr = NOP_INSTRUCTION;
+        }
+        else if (r_id_stall) {
+            // During stall, preserve previous instruction
+            s_id_instr = r_id_instr_preserved;
+            r_id_pc = r_id_pc_preserved;
+        }
+        else {
+            s_id_instr = id_instr_temp;
+        }
+
+        // codasip_info(INFO_PIPE, "Instruction: %x\n", s_id_instr);
+        // codasip_info(INFO_PIPE, "Opcode field: %x\n", s_id_instr[6..0]);
+        // codasip_info(INFO_PIPE, "Immediate field: %x\n", s_id_instr[31..12]);
+
+        // -----------------------------------------------------------------------------------------
+        // Instruction parsing
+        // -----------------------------------------------------------------------------------------
+
+        // Opcode
+        s_id_opc = s_id_instr[31..25] :: s_id_instr[14..12] :: s_id_instr[6..0];
+
+        // Register fields
+        s_id_rs1 = s_id_instr[19..15];
+        s_id_rs2 = s_id_instr[24..20];
+        s_id_rd = s_id_instr[11..7];
+
+        // Read Register File
+        s_id_reg1 = rf_xpr.src1[s_id_rs1];
+        s_id_reg2 = rf_xpr.src2[s_id_rs2];
+
+        // Load hazard detection
+        // Check if instruction in EX is a load AND it writes to a register we read
+        s_id_loadhaz = (r_ex_memop != MEM_NOP) && 
+                      (r_ex_memop <= MEM_LW) &&    // MEM_LW is last load op in enum
+                      (r_ex_rd != 0) &&
+                      ((r_ex_rd == s_id_rs1) || (r_ex_rd == s_id_rs2));
+
+        // Generate immediate values
+        // I-type immediate
+        s_id_immedi = (int32)(int12)s_id_instr[31..20];
+        
+        // S-type immediate
+        s_id_immeds = (int32)(int12)(s_id_instr[31..25] :: s_id_instr[11..7]);
+        
+        // B-type immediate
+        s_id_immedb = ((int32)(int12)(s_id_instr[31..31] :: s_id_instr[7..7] :: s_id_instr[30..25] :: s_id_instr[11..8])) << 1;
+        
+        // U-type immediate
+        s_id_immedu = ((uint32)s_id_instr[31..12] << 12);
+        
+        // J-type immediate
+        s_id_immedj = ((int32)(int20)(s_id_instr[31..31] :: s_id_instr[19..12] :: s_id_instr[20..20] :: s_id_instr[30..21])) << 1;
+
+        // Register forwarding logic
+        if ((r_wb_rd == s_id_rs1) && (r_wb_rd != 0) && (r_wb_regwrite == WE_TRUE)) {
+            s_rff1_sel = RFF1_WB;
+        }
+        else if ((r_me_rd == s_id_rs1) && (r_me_rd != 0) && (r_me_regwrite == WE_TRUE)) {
+            s_rff1_sel = RFF1_ME;
+        }
+        else {
+            s_rff1_sel = RFF1_RF;
+        }
+
+        if ((r_wb_rd == s_id_rs2) && (r_wb_rd != 0) && (r_wb_regwrite == WE_TRUE)) {
+            s_rff2_sel = RFF2_WB;
+        }
+        else if ((r_me_rd == s_id_rs2) && (r_me_rd != 0) && (r_me_regwrite == WE_TRUE)) {
+            s_rff2_sel = RFF2_ME;
+        }
+        else {
+            s_rff2_sel = RFF2_RF;
+        }
+
+        // Updated RFF muxes
+        switch (s_rff1_sel) {
+            case RFF1_RF: 
+                s_rff1_src = s_id_reg1; 
+                break;
+            case RFF1_ME: 
+                s_rff1_src = r_me_alu; 
+                break;
+            case RFF1_WB: 
+                // s_rff1_src = r_wb_alu; 
+                s_rff1_src = s_wb_result;
+                break;
+            default: 
+                s_rff1_src = s_id_reg1; 
+                break;
+        }
+
+        switch (s_rff2_sel) {
+            case RFF2_RF: 
+                s_rff2_src = s_id_reg2; 
+                break;
+            case RFF2_ME: 
+                s_rff2_src = r_me_alu; 
+                break;
+            case RFF2_WB: 
+                // s_rff2_src = r_wb_alu; 
+                s_rff2_src = s_wb_result;
+                break;
+            default: 
+                s_rff2_src = s_id_reg2; 
+                break;
+        }
+
+        // Set stall signal - stall on execute stall OR load hazard
+        s_id_stall = s_ex_stall || s_id_loadhaz;
+
+        // Decoder activation
+        dec(s_id_opc);
+
+        // Immediate selection multiplexor
+        switch (s_id_immsel) {
+            case IMM_ITYPE:
+                s_id_immed = s_id_immedi;
+                break;
+            case IMM_STYPE:
+                s_id_immed = s_id_immeds;
+                break;
+            case IMM_BTYPE:
+                s_id_immed = s_id_immedb;
+                break;
+            case IMM_UTYPE:
+                s_id_immed = s_id_immedu;
+                break;
+            case IMM_JTYPE:
+                s_id_immed = s_id_immedj;
+                break;
+            case IMM_NONE:
+                s_id_immed = 0;
+                break;
+            default:
+                s_id_immed = 0;
+                codasip_fatal(IMM_ERROR, "Default case: %d\n", s_id_immsel);
+                break;
+        }
+
+        // Preserve instruction and PC for stalls
+        r_id_instr_preserved = s_id_instr;
+        r_id_pc_preserved = r_id_pc;
+        
+        // Update the registers
+        id_output();
+    };
+};
+
+event id_output : pipeline(pipe.ID)
+{
+    semantics
+    {
+        r_ex_pc = r_id_pc;
+        r_ex_instr = s_id_instr;
+        r_ex_aluop = s_id_aluop;
+        r_ex_regwrite = s_id_regwrite;
+        r_ex_alusrc1 = s_id_alusrc1;
+        r_ex_alusrc2 = s_id_alusrc2;
+        r_ex_halt = s_id_halt;
+        r_ex_rd = s_id_rd;
+        r_ex_immed = s_id_immed;
+        r_ex_reg1 = s_rff1_src;
+        r_ex_reg2 = s_rff2_src;
+        r_ex_src1 = s_id_rs1;
+        r_ex_src2 = s_id_rs2;
+        r_ex_brnchop = s_id_brnchop;
+        r_ex_branchsel = s_id_branchsel;
+        r_ex_rfwt_sel = s_id_rfwt_sel;
+        r_ex_memop = s_id_memop;
+    };
+};

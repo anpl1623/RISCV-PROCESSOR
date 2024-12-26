@@ -1,0 +1,569 @@
+#include "ca_defines.hcodal"
+#include "opcodes.hcodal"
+#include "config.hcodal"
+#include "common_enums.hcodal"
+
+// -------------------------------------------------------------------------------------------------
+// Decoder
+// -------------------------------------------------------------------------------------------------
+
+set dec = i_hw_halt
+        ,i_hw_alu
+        ,i_hw_alu_i
+        ,i_hw_itype_special
+        ,i_hw_btype_branches
+        ,i_hw_utype_ops
+        ,i_hw_itype_jlreg
+        ,i_hw_jtype_jlink
+        ,i_hw_loads
+        ,i_hw_store
+        ;
+
+// -------------------------------------------------------------------------------------------------
+// Halt instruction
+// -------------------------------------------------------------------------------------------------
+element i_hw_halt
+{
+    use opc_halt as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_FALSE;
+
+        // Operations
+        s_id_aluop = ALU_NOP;
+
+        // Operand MUXes
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_REG;
+
+        // Immediate Selection
+        s_id_immsel = IMM_NONE;
+        
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+        
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_ALU;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_HALT;
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// R-type arithmetic instructions
+// -------------------------------------------------------------------------------------------------
+element i_hw_alu
+{
+    use opc_rtype_alu as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_REG;
+
+        // Immediate Selection
+        s_id_immsel = IMM_NONE;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_ALU;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+        switch (opc)
+        {
+            case RTYPE_ADD:
+                s_id_aluop = ALU_ADD;
+                break;
+            case RTYPE_SUB:
+                s_id_aluop = ALU_SUB;
+                break;
+            case RTYPE_SLL:
+                s_id_aluop = ALU_SLL;
+                break;
+            case RTYPE_SLT:
+                s_id_aluop = ALU_SLT;
+                break;
+            case RTYPE_SLTU:
+                s_id_aluop = ALU_SLTU;
+                break;
+            case RTYPE_XOR:
+                s_id_aluop = ALU_XOR;
+                break;
+            case RTYPE_SRL:
+                s_id_aluop = ALU_SRL;
+                break;
+            case RTYPE_SRA:
+                s_id_aluop = ALU_SRA;
+                break;
+            case RTYPE_OR:
+                s_id_aluop = ALU_OR;
+                break;
+            case RTYPE_AND:
+                s_id_aluop = ALU_AND;
+                break;
+            case RTYPE_ENC:
+                s_id_aluop = ALU_ENC;
+                break;
+            case RTYPE_DEC:
+                s_id_aluop = ALU_DEC;
+                break;
+            default:
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// I-type arithmetic instructions
+// -------------------------------------------------------------------------------------------------
+element i_hw_alu_i
+{
+    use opc_itype_alu as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_ITYPE;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_ALU;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        switch (opc)
+        {
+            case ITYPE_ADDI:
+                s_id_aluop = ALU_ADD;
+                break;
+            case ITYPE_SLTI:
+                s_id_aluop = ALU_SLT;
+                break;
+            case ITYPE_SLTIU:
+                s_id_aluop = ALU_SLTU;
+                break;
+            case ITYPE_XORI:
+                s_id_aluop = ALU_XOR;
+                break;
+            case ITYPE_ORI:
+                s_id_aluop = ALU_OR;
+                break;
+            case ITYPE_ANDI:
+                s_id_aluop = ALU_AND;
+                break;
+            default:
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// I-type special instructions (shifts)
+// -------------------------------------------------------------------------------------------------
+element i_hw_itype_special
+{
+    use opc_itype_special as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_ITYPE;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_ALU;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        switch (opc)
+        {
+            case IMM_SHIFT_SLLI:
+                s_id_aluop = ALU_SLL;
+                break;
+            case IMM_SHIFT_SRLI:
+                s_id_aluop = ALU_SRL;
+                break;
+            case IMM_SHIFT_SRAI:
+                s_id_aluop = ALU_SRA;
+                break;
+            default:
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// B-type branch instructions
+// -------------------------------------------------------------------------------------------------
+element i_hw_btype_branches
+{
+    use opc_btype_branches as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_FALSE;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_REG;
+
+        // Immediate Selection
+        s_id_immsel = IMM_BTYPE;
+
+        // Branch Address Selection
+        s_id_branchsel = BRADD_ADDR;
+
+        // Register File Write Source
+        s_id_rfwt_sel = DONT_CARE;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        switch (opc)
+        {
+            case BTYPE_BEQ:
+                s_id_aluop = ALU_SUB;
+                s_id_brnchop = BRANCH_COND_TRUE;
+                break;
+            case BTYPE_BNE:
+                s_id_aluop = ALU_SUB;
+                s_id_brnchop = BRANCH_COND_FALSE;
+                break;
+            case BTYPE_BLT:
+                s_id_aluop = ALU_SLT;
+                s_id_brnchop = BRANCH_COND_FALSE;
+                break;
+            case BTYPE_BGE:
+                s_id_aluop = ALU_SLT;
+                s_id_brnchop = BRANCH_COND_TRUE;
+                break;
+            case BTYPE_BLTU:
+                s_id_aluop = ALU_SLTU;
+                s_id_brnchop = BRANCH_COND_FALSE;
+                break;
+            case BTYPE_BGEU:
+                s_id_aluop = ALU_SLTU;
+                s_id_brnchop = BRANCH_COND_TRUE;
+                break;
+            default:
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// U-type instructions (LUI, AUIPC)
+// -------------------------------------------------------------------------------------------------
+element i_hw_utype_ops
+{
+    use opc_utype_ops as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Operations
+        s_id_aluop = ALU_ADD;
+
+        // Immediate Selection
+        s_id_immsel = IMM_UTYPE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_ALU;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        switch (opc)
+        {
+            case UTYPE_LUI:
+                s_id_alusrc1 = ALU_SRC1_ZERO;
+                s_id_alusrc2 = ALU2_IMM;
+                break;
+            case UTYPE_AUIPC:
+                s_id_alusrc1 = ALU_SRC1_PC;
+                s_id_alusrc2 = ALU2_IMM;
+                break;
+            default:
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// JALR instruction
+// -------------------------------------------------------------------------------------------------
+element i_hw_itype_jlreg
+{
+    use opc_itype_jlreg as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Operations
+        s_id_aluop = ALU_ADD;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_ITYPE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_TRUE;
+        s_id_branchsel = BRADD_ALU;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_PC;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// JAL instruction
+// -------------------------------------------------------------------------------------------------
+element i_hw_jtype_jlink
+{
+    use opc_jtype_jlink as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Operations
+        s_id_aluop = ALU_ADD;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_PC;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_JTYPE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_TRUE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_PC;
+
+        // Memory Operation
+        s_id_memop = MEM_NOP;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// Load instructions
+// -------------------------------------------------------------------------------------------------
+element i_hw_loads
+{
+    use opc_itype_loads as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable
+        s_id_regwrite = WE_TRUE;
+
+        // Operations
+        s_id_aluop = ALU_ADD;
+
+        // ALU Source Control
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_ITYPE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // Register File Write Source
+        s_id_rfwt_sel = RFWT_MEM;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        // Memory Operation
+        switch(opc)
+        {
+            case ITYPE_LB:
+                s_id_memop = MEM_LB;
+                break;
+            case ITYPE_LBU:
+                s_id_memop = MEM_LBU;
+                break;
+            case ITYPE_LH:
+                s_id_memop = MEM_LH;
+                break;
+            case ITYPE_LHU:
+                s_id_memop = MEM_LHU;
+                break;
+            case ITYPE_LW:
+                s_id_memop = MEM_LW;
+                break;
+            default:
+                s_id_memop = MEM_NOP;
+                codasip_fatal(ALU_ERROR, "Default case: %d\n", opc);
+                break;
+        }
+    };
+};
+
+// -------------------------------------------------------------------------------------------------
+// Store instructions
+// -------------------------------------------------------------------------------------------------
+
+element i_hw_store
+{
+    use opc_stype_store as opc;
+
+    assembly { opc };
+    binary { opc };
+
+    semantics
+    {
+        // Register file write enable - disabled for stores
+        s_id_regwrite = WE_FALSE;
+
+        // Operations - use ALU for address calculation
+        // Operations
+        s_id_aluop = ALU_ADD;
+
+        // ALU Source Control  
+        s_id_alusrc1 = ALU_SRC1_REG;
+        s_id_alusrc2 = ALU2_IMM;
+
+        // Immediate Selection
+        s_id_immsel = IMM_STYPE;
+
+        // Branch Control
+        s_id_brnchop = BRANCH_FALSE;
+        s_id_branchsel = BRADD_ADDR;
+
+        // Register File Write Source
+        s_id_rfwt_sel = DONT_CARE;
+
+        // HALT Command
+        s_id_halt = HALT_NOHALT;
+
+        // Memory Operation
+        switch(opc)
+        {
+            case STYPE_SB: 
+                s_id_memop = MEM_SB;
+                break;
+            case STYPE_SH:
+                s_id_memop = MEM_SH;
+                break;
+            case STYPE_SW:
+                s_id_memop = MEM_SW;
+                break;
+            default:
+                s_id_memop = MEM_NOP;
+                break;
+        }
+    };
+};

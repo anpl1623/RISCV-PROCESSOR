@@ -1,0 +1,72 @@
+/**
+ * Codasip s.r.o.
+ *
+ * CONFIDENTIAL
+ *
+ * Copyright 2022 Codasip s.r.o.
+ *
+ * All Rights Reserved.
+ *
+ * NOTICE: All information contained in this file, is and shall remain the property of
+ * Codasip s.r.o. and its suppliers, if any.
+ *
+ * The intellectual and technical concepts contained herein are confidential and proprietary to
+ * Codasip s.r.o. and are protected by trade secret and copyright law.  In addition, elements of the
+ * technical concepts may be patent pending.
+ *
+ * This file is part of the Codasip Studio product. No part of the Studio product, including this
+ * file, may be use, copied, modified, or distributed except in accordance with the terms contained
+ * in Codasip license agreement under which you obtained this file.
+ *
+ *  \file   ca_pipe5_wb.codal
+ *  \author Codasip
+ *  \date   09.02.2022
+ *  \brief  Write-back - cycle accurate model
+ */
+
+// -------------------------------------------------------------------------------------------------
+// Write-Back Stage
+// -------------------------------------------------------------------------------------------------
+#include "config.hcodal"
+#include "ca_defines.hcodal"
+
+event wb : pipeline(pipe.WB)
+{
+    semantics
+    {
+        uint32 pc_plus_4;
+        pc_plus_4 = r_wb_pc + INSTR_SIZE;
+
+        // Debug prints
+        codasip_info(INFO_PIPE, "WB Stage - regwrite: %d, rd: %d\n", r_wb_regwrite, r_wb_rd);
+
+        // Register file write data multiplexor
+        switch (r_wb_rfwt_sel) {
+            case RFWT_ALU:
+                s_wb_result = r_wb_alu;
+                codasip_info(INFO_PIPE, "WB Stage - ALU result: %x rd: %d\n", r_wb_alu, r_wb_rd);
+                break;
+            case RFWT_PC:
+                s_wb_result = pc_plus_4;
+                break;
+            case RFWT_MEM:
+                s_wb_result = r_wb_memdat;
+                codasip_info(INFO_PIPE, "WB Stage - MEM result: %x rd: %d\n", r_wb_memdat, r_wb_rd);
+                break;
+            default:
+                s_wb_result = 0;
+                codasip_fatal(RFWT_ERROR, "Default case: %d\n", r_wb_rfwt_sel);
+                break;
+        }
+
+        // Result write with debug
+        if (r_wb_regwrite && (r_wb_rd != 0))
+        {
+            codasip_info(INFO_PIPE, "Writing %x to register %d (instr: %x)\n", 
+                s_wb_result, r_wb_rd, r_wb_instr);
+            rf_xpr.wrt0[r_wb_rd] = s_wb_result;
+        }
+
+        s_wb_stall = 0;
+    };
+};
